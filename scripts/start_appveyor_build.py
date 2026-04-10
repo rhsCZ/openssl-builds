@@ -65,6 +65,14 @@ def appveyor_request(method: str, path: str, token: str, api_prefix: str, payloa
         ) from exc
 
 
+def try_appveyor_request(method: str, path: str, token: str, api_prefix: str) -> dict | list | None:
+    try:
+        return appveyor_request(method, path, token, api_prefix)
+    except RuntimeError as exc:
+        print(f"AppVeyor API attempt failed for {appveyor_url(path, api_prefix)}: {exc}")
+        return None
+
+
 def appveyor_text_request(method: str, path: str, token: str, api_prefix: str) -> str:
     _, _, body = appveyor_http(method, path, token, api_prefix)
     return body
@@ -108,6 +116,40 @@ def print_failed_job_logs(build: dict, token: str, api_prefix: str) -> None:
         lines = log.splitlines()
         for line in lines[-120:]:
             print(line)
+
+
+def get_project_build(account: str, project: str, version: str, token: str, api_prefix: str) -> dict:
+    account_path = urllib.parse.quote(account, safe="")
+    project_path = urllib.parse.quote(project, safe="")
+    version_path = urllib.parse.quote(version, safe="")
+
+    candidates: list[tuple[str, str]] = []
+    if api_prefix:
+        candidates.append((f"/projects/{project_path}/build/{version_path}", api_prefix))
+        candidates.append((f"/projects/{account_path}/{project_path}/build/{version_path}", ""))
+    else:
+        candidates.append((f"/projects/{account_path}/{project_path}/build/{version_path}", ""))
+
+    for path, prefix in candidates:
+        response = try_appveyor_request("GET", path, token, prefix)
+        if isinstance(response, dict) and "build" in response:
+            return response
+
+    projects_response = appveyor_request("GET", "/projects", token, api_prefix)
+    projects = projects_response if isinstance(projects_response, list) else []
+    matching_projects = [item for item in projects if item.get("slug") == project]
+    if not matching_projects:
+        raise RuntimeError(f"AppVeyor project '{project}' disappeared from project list while polling")
+
+    builds = matching_projects[0].get("builds") or []
+    matching_builds = [item for item in builds if item.get("version") == version]
+    if matching_builds:
+        return {"project": matching_projects[0], "build": matching_builds[0]}
+
+    visible_versions = ", ".join(item.get("version", "") for item in builds if item.get("version")) or "none"
+    raise RuntimeError(
+        f"Could not load AppVeyor build {version}. Recent versions visible from project list: {visible_versions}"
+    )
 
 
 def main() -> int:
@@ -164,7 +206,7 @@ def main() -> int:
     deadline = time.time() + timeout_seconds
 
     while time.time() < deadline:
-        project_status = appveyor_request("GET", f"/projects/{account}/{project}/build/{version}", token, api_prefix)
+        project_status = get_project_build(account, project, version, token, api_prefix)
         current_build = project_status.get("build", {})
 
         status = current_build.get("status", "unknown")
