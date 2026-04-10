@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import os
 import re
@@ -13,7 +14,13 @@ import sys
 from find_latest_openssl import find_latest, is_prerelease, version_key
 
 
+def log(message: str) -> None:
+    timestamp = dt.datetime.now(dt.UTC).strftime("%H:%M:%S")
+    print(f"[{timestamp}] INFO {message}", flush=True)
+
+
 def load_config(path: str) -> dict:
+    log(f"Loading config from {path}")
     with open(path, "r", encoding="utf-8") as handle:
         return json.load(handle)
 
@@ -25,8 +32,11 @@ def bool_input(value: str | None) -> bool | None:
 
 
 def git_tags() -> list[str]:
+    log("Reading existing git tags")
     result = subprocess.run(["git", "tag", "--list"], check=True, capture_output=True, text=True)
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    tags = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    log(f"Found {len(tags)} git tag(s)")
+    return tags
 
 
 def pattern_to_regex(pattern: str) -> re.Pattern[str]:
@@ -66,13 +76,19 @@ def main() -> int:
     config = load_config(args.config)
     allow_override = bool_input(args.allow_prereleases_input)
     allow_prereleases = bool(config.get("allow_prereleases", False) if allow_override is None else allow_override)
+    log(f"Prerelease versions allowed: {str(allow_prereleases).lower()}")
 
     forced_version = args.version.strip()
+    if forced_version:
+        log(f"Using manually requested OpenSSL version {forced_version}")
+    else:
+        log("No manual version provided; detecting latest upstream version")
     upstream_version = forced_version or find_latest(config["openssl_source_url"], allow_prereleases)
     if is_prerelease(upstream_version) and not allow_prereleases:
         raise RuntimeError(f"Version {upstream_version} is a prerelease and prereleases are disabled")
 
     tag = config["tag_pattern"].format(version=upstream_version)
+    log(f"Computed target tag {tag}")
     tags = git_tags()
     processed = latest_processed_version(tags, config["tag_pattern"], allow_prereleases)
     tag_exists = tag in tags
@@ -81,11 +97,11 @@ def main() -> int:
     if tag_exists and not forced_version:
         should_build = False
 
-    print(f"Upstream OpenSSL version: {upstream_version}")
-    print(f"Last processed version: {processed or 'none'}")
-    print(f"Target tag: {tag}")
-    print(f"Target tag already exists: {str(tag_exists).lower()}")
-    print(f"Build required: {str(should_build).lower()}")
+    log(f"Upstream OpenSSL version: {upstream_version}")
+    log(f"Last processed version: {processed or 'none'}")
+    log(f"Target tag: {tag}")
+    log(f"Target tag already exists: {str(tag_exists).lower()}")
+    log(f"Build required: {str(should_build).lower()}")
 
     write_output("version", upstream_version)
     write_output("last_processed_version", processed)
@@ -98,5 +114,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(f"ERROR {exc}", file=sys.stderr, flush=True)
         raise SystemExit(1)

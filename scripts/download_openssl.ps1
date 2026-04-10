@@ -5,27 +5,40 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Write-Step {
+    param([string] $Message)
+    Write-Host ("[{0}] {1}" -f (Get-Date -Format "HH:mm:ss"), $Message)
+}
+
 $sourceDir = Join-Path $PWD "source"
 $archiveName = "openssl-$Version.tar.gz"
 $archivePath = Join-Path $PWD $archiveName
 $extractPath = Join-Path $sourceDir "openssl-$Version"
 $downloadUrl = "https://www.openssl.org/source/$archiveName"
 
+Write-Step "Preparing OpenSSL source download for version $Version"
+Write-Step "Source directory: $sourceDir"
+Write-Step "Archive path: $archivePath"
+Write-Step "Extract path: $extractPath"
+
 if (Test-Path $extractPath) {
-    Write-Host "OpenSSL source already extracted at $extractPath"
+    Write-Step "OpenSSL source already extracted at $extractPath"
     exit 0
 }
 
+Write-Step "Creating source directory"
 New-Item -ItemType Directory -Force -Path $sourceDir | Out-Null
 
-Write-Host "Downloading $downloadUrl"
+Write-Step "Downloading $downloadUrl"
 Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
+Write-Step "Download finished"
 
-Write-Host "Extracting $archiveName"
+Write-Step "Extracting $archiveName"
 tar -xzf $archivePath -C $sourceDir
+Write-Step "Extraction finished"
 
 if (-not (Test-Path $extractPath)) {
     throw "Expected extracted directory was not found: $extractPath"
 }
 
-Write-Host "OpenSSL source is ready at $extractPath"
+Write-Step "OpenSSL source is ready at $extractPath"

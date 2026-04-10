@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import os
 import sys
@@ -13,7 +14,13 @@ import urllib.parse
 import urllib.request
 
 
+def log(message: str) -> None:
+    timestamp = dt.datetime.now(dt.UTC).strftime("%H:%M:%S")
+    print(f"[{timestamp}] INFO {message}", flush=True)
+
+
 def load_config(path: str) -> dict:
+    log(f"Loading config from {path}")
     with open(path, "r", encoding="utf-8") as handle:
         return json.load(handle)
 
@@ -31,6 +38,7 @@ def appveyor_url(path: str, api_prefix: str) -> str:
 def appveyor_http(method: str, path: str, token: str, api_prefix: str, payload: dict | None = None) -> tuple[int, str, str]:
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     url = appveyor_url(path, api_prefix)
+    log(f"AppVeyor API {method} {url}")
     request = urllib.request.Request(
         url,
         data=data,
@@ -69,7 +77,7 @@ def try_appveyor_request(method: str, path: str, token: str, api_prefix: str) ->
     try:
         return appveyor_request(method, path, token, api_prefix)
     except RuntimeError as exc:
-        print(f"AppVeyor API attempt failed for {appveyor_url(path, api_prefix)}: {exc}")
+        log(f"AppVeyor API attempt failed for {appveyor_url(path, api_prefix)}: {exc}")
         return None
 
 
@@ -82,6 +90,7 @@ def require_env(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
         raise RuntimeError(f"{name} is required")
+    log(f"Environment variable {name} is set")
     return value
 
 
@@ -96,7 +105,7 @@ def project_summary(project: dict) -> str:
 def print_failed_job_logs(build: dict, token: str, api_prefix: str) -> None:
     jobs = build.get("jobs") or []
     if not jobs:
-        print("No AppVeyor jobs found in build response.")
+        log("No AppVeyor jobs found in build response")
         return
 
     for job in jobs:
@@ -106,11 +115,11 @@ def print_failed_job_logs(build: dict, token: str, api_prefix: str) -> None:
 
         job_name = job.get("name") or job_id
         job_status = job.get("status") or "unknown"
-        print(f"--- AppVeyor job {job_name} status={job_status} log tail ---")
+        log(f"--- AppVeyor job {job_name} status={job_status} log tail ---")
         try:
             log = appveyor_text_request("GET", f"/buildjobs/{job_id}/log", token, api_prefix)
         except Exception as exc:
-            print(f"Could not download AppVeyor log for job {job_id}: {exc}")
+            log(f"Could not download AppVeyor log for job {job_id}: {exc}")
             continue
 
         lines = log.splitlines()
@@ -119,6 +128,7 @@ def print_failed_job_logs(build: dict, token: str, api_prefix: str) -> None:
 
 
 def get_project_build(account: str, project: str, version: str, token: str, api_prefix: str) -> dict:
+    log(f"Loading AppVeyor build status for version {version}")
     account_path = urllib.parse.quote(account, safe="")
     project_path = urllib.parse.quote(project, safe="")
     version_path = urllib.parse.quote(version, safe="")
@@ -131,10 +141,13 @@ def get_project_build(account: str, project: str, version: str, token: str, api_
         candidates.append((f"/projects/{account_path}/{project_path}/build/{version_path}", ""))
 
     for path, prefix in candidates:
+        log(f"Trying AppVeyor build status endpoint {appveyor_url(path, prefix)}")
         response = try_appveyor_request("GET", path, token, prefix)
         if isinstance(response, dict) and "build" in response:
+            log("Loaded AppVeyor build status from build endpoint")
             return response
 
+    log("Falling back to AppVeyor project list for build status")
     projects_response = appveyor_request("GET", "/projects", token, api_prefix)
     projects = projects_response if isinstance(projects_response, list) else []
     matching_projects = [item for item in projects if item.get("slug") == project]
@@ -168,11 +181,12 @@ def main() -> int:
     release_token = require_env("GITHUB_RELEASE_TOKEN")
     api_prefix = appveyor_api_prefix(token, account)
 
-    print(f"AppVeyor account: {account}")
-    print(f"AppVeyor project slug: {project}")
-    print(f"AppVeyor API mode: {'v2 user-level token' if api_prefix else 'classic account token'}")
-    print(f"AppVeyor branch: {config.get('appveyor_branch', 'master')}")
+    log(f"AppVeyor account: {account}")
+    log(f"AppVeyor project slug: {project}")
+    log(f"AppVeyor API mode: {'v2 user-level token' if api_prefix else 'classic account token'}")
+    log(f"AppVeyor branch: {config.get('appveyor_branch', 'master')}")
 
+    log("Loading AppVeyor project list")
     projects_response = appveyor_request("GET", "/projects", token, api_prefix)
     projects = projects_response if isinstance(projects_response, list) else []
     matching_projects = [item for item in projects if item.get("slug") == project]
@@ -183,7 +197,7 @@ def main() -> int:
             f"Projects visible to this token: {visible}"
         )
 
-    print(f"Found AppVeyor project: {project_summary(matching_projects[0])}")
+    log(f"Found AppVeyor project: {project_summary(matching_projects[0])}")
 
     payload = {
         "accountName": account,
@@ -197,25 +211,27 @@ def main() -> int:
         },
     }
 
+    log(f"Starting AppVeyor build for OpenSSL {args.version} and tag {args.tag}")
     build = appveyor_request("POST", "/builds", token, api_prefix, payload)
     build_id = build.get("buildId") or build.get("version")
     version = build.get("version")
-    print(f"Started AppVeyor build version={version} buildId={build_id} for OpenSSL {args.version}.")
+    log(f"Started AppVeyor build version={version} buildId={build_id} for OpenSSL {args.version}")
 
     if not args.wait:
-        print("Not waiting for AppVeyor build completion. AppVeyor will upload release assets when the build succeeds.")
+        log("Not waiting for AppVeyor build completion. AppVeyor will upload release assets when the build succeeds")
         return 0
 
     timeout_seconds = int(config.get("appveyor_timeout_minutes", 120)) * 60
     poll_seconds = int(config.get("appveyor_poll_seconds", 30))
     deadline = time.time() + timeout_seconds
 
+    log(f"Waiting for AppVeyor build for up to {timeout_seconds} seconds")
     while time.time() < deadline:
         project_status = get_project_build(account, project, version, token, api_prefix)
         current_build = project_status.get("build", {})
 
         status = current_build.get("status", "unknown")
-        print(f"AppVeyor build {version} status: {status}")
+        log(f"AppVeyor build {version} status: {status}")
         if status == "success":
             return 0
         if status in {"failed", "cancelled"}:
@@ -230,5 +246,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(f"ERROR {exc}", file=sys.stderr, flush=True)
         raise SystemExit(1)

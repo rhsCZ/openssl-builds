@@ -26,6 +26,11 @@ if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction Sile
     $PSNativeCommandUseErrorActionPreference = $false
 }
 
+function Write-Step {
+    param([string] $Message)
+    Write-Host ("[{0}] {1}" -f (Get-Date -Format "HH:mm:ss"), $Message)
+}
+
 function Require-Command {
     param([string] $Name)
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
@@ -41,6 +46,10 @@ function Invoke-CheckedCommand {
         [Parameter(ValueFromRemainingArguments = $true)]
         [string[]] $Arguments
     )
+
+    $commandLine = "$FilePath $($Arguments -join ' ')".Trim()
+    Write-Step "Starting: $commandLine"
+    $startedAt = Get-Date
 
     $previousErrorActionPreference = $ErrorActionPreference
     $previousNativePreference = $null
@@ -64,6 +73,9 @@ function Invoke-CheckedCommand {
     if ($exitCode -ne 0) {
         throw "$FilePath $($Arguments -join ' ') failed with exit code $exitCode"
     }
+
+    $elapsed = (Get-Date) - $startedAt
+    Write-Step ("Finished: {0} in {1:mm\:ss}" -f $commandLine, $elapsed)
 }
 
 function Import-VisualStudioEnvironment {
@@ -97,17 +109,20 @@ function Import-VisualStudioEnvironment {
     }
 
     $vcArch = if ($Arch -eq "x86") { "x86" } else { "amd64" }
-    Write-Host "Loading Visual Studio environment from $vcvars for $vcArch"
+    Write-Step "Loading Visual Studio environment from $vcvars for $vcArch"
     cmd /c "`"$vcvars`" $vcArch && set" | ForEach-Object {
         if ($_ -match "^(.*?)=(.*)$") {
             Set-Item -Path "env:$($matches[1])" -Value $matches[2]
         }
     }
+    Write-Step "Visual Studio environment loaded"
 }
 
 $env:PATH = "C:\Strawberry\perl\bin;C:\Program Files\NASM;$env:PATH"
 
+Write-Step "Preparing Visual Studio build environment"
 Import-VisualStudioEnvironment -Arch $Arch
+Write-Step "Checking required commands on PATH"
 Require-Command perl
 Require-Command nasm
 Require-Command nmake
@@ -125,26 +140,29 @@ try {
         $SharedOption = if ($Linkage -eq "static") { "no-shared" } else { "shared" }
     }
 
-    Write-Host "===== $Name ====="
-    Write-Host "OpenSSL version: $Version"
-    Write-Host "Architecture: $Arch"
-    Write-Host "Target: $Target"
-    Write-Host "Shared option: $SharedOption"
-    Write-Host "Install directory: $installPath"
+    Write-Step "===== $Name ====="
+    Write-Step "OpenSSL version: $Version"
+    Write-Step "Architecture: $Arch"
+    Write-Step "Target: $Target"
+    Write-Step "Shared option: $SharedOption"
+    Write-Step "Install directory: $installPath"
+    Write-Step "Checking Perl version"
     Invoke-CheckedCommand perl -v
+    Write-Step "Checking NASM version"
     Invoke-CheckedCommand nasm -v
 
+    Write-Step "Creating install directory"
     New-Item -ItemType Directory -Force -Path $installPath | Out-Null
 
     $configureArgs = @($Target, $SharedOption, "--prefix=$installPath", "--openssldir=$installPath\ssl", "no-makedepend")
 
-    Write-Host "Configuring OpenSSL $Version for $Arch $Linkage"
+    Write-Step "Configuring OpenSSL $Version for $Arch $Linkage"
     Invoke-CheckedCommand perl @("Configure") @configureArgs
 
-    Write-Host "Building OpenSSL"
+    Write-Step "Building OpenSSL. This can take several minutes."
     Invoke-CheckedCommand nmake
 
-    Write-Host "Installing OpenSSL into $installPath"
+    Write-Step "Installing OpenSSL into $installPath"
     Invoke-CheckedCommand nmake install
 }
 finally {
@@ -154,3 +172,5 @@ finally {
 if (-not (Test-Path $installPath)) {
     throw "Install directory was not created: $installPath"
 }
+
+Write-Step "OpenSSL build finished successfully for $Name"
