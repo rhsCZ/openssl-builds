@@ -157,6 +157,7 @@ def main() -> int:
     parser.add_argument("--version", required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--config", default="config/release.json")
+    parser.add_argument("--wait", action="store_true", help="Wait for the AppVeyor build to finish")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -200,6 +201,10 @@ def main() -> int:
     build_id = build.get("buildId") or build.get("version")
     version = build.get("version")
     print(f"Started AppVeyor build version={version} buildId={build_id} for OpenSSL {args.version}.")
+
+    if not args.wait:
+        print("Not waiting for AppVeyor build completion. AppVeyor will upload release assets when the build succeeds.")
+        return 0
 
     timeout_seconds = int(config.get("appveyor_timeout_minutes", 120)) * 60
     poll_seconds = int(config.get("appveyor_poll_seconds", 30))

@@ -22,11 +22,47 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
 
 function Require-Command {
     param([string] $Name)
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         throw "$Name is required but was not found on PATH"
+    }
+}
+
+function Invoke-CheckedCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $FilePath,
+
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]] $Arguments
+    )
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    $previousNativePreference = $null
+    if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+        $previousNativePreference = $PSNativeCommandUseErrorActionPreference
+        $PSNativeCommandUseErrorActionPreference = $false
+    }
+
+    try {
+        $ErrorActionPreference = "Continue"
+        & $FilePath @Arguments
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+        if ($null -ne $previousNativePreference) {
+            $PSNativeCommandUseErrorActionPreference = $previousNativePreference
+        }
+    }
+
+    if ($exitCode -ne 0) {
+        throw "$FilePath $($Arguments -join ' ') failed with exit code $exitCode"
     }
 }
 
@@ -95,30 +131,21 @@ try {
     Write-Host "Target: $Target"
     Write-Host "Shared option: $SharedOption"
     Write-Host "Install directory: $installPath"
-    perl -v
-    nasm -v
+    Invoke-CheckedCommand perl -v
+    Invoke-CheckedCommand nasm -v
 
     New-Item -ItemType Directory -Force -Path $installPath | Out-Null
 
     $configureArgs = @($Target, $SharedOption, "--prefix=$installPath", "--openssldir=$installPath\ssl", "no-makedepend")
 
     Write-Host "Configuring OpenSSL $Version for $Arch $Linkage"
-    & perl Configure @configureArgs
-    if ($LASTEXITCODE -ne 0) {
-        throw "OpenSSL Configure failed with exit code $LASTEXITCODE"
-    }
+    Invoke-CheckedCommand perl @("Configure") @configureArgs
 
     Write-Host "Building OpenSSL"
-    & nmake /S
-    if ($LASTEXITCODE -ne 0) {
-        throw "nmake failed with exit code $LASTEXITCODE"
-    }
+    Invoke-CheckedCommand nmake
 
     Write-Host "Installing OpenSSL into $installPath"
-    & nmake /S install
-    if ($LASTEXITCODE -ne 0) {
-        throw "nmake install failed with exit code $LASTEXITCODE"
-    }
+    Invoke-CheckedCommand nmake install
 }
 finally {
     Pop-Location

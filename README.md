@@ -24,7 +24,7 @@ scripts/upload_release_assets.ps1    Uploads AppVeyor artifacts to the GitHub Re
 2. `scripts/plan_release.py` reads `config/release.json`, detects the latest stable OpenSSL version from `https://www.openssl.org/source/`, and compares it with existing tags matching `openssl-{version}`.
 3. If there is no new version, the workflow logs the detected state and exits successfully.
 4. If there is a new version, `scripts/create_github_release.py` creates or reuses the tag and GitHub Release.
-5. `scripts/start_appveyor_build.py` starts AppVeyor with `OPENSSL_VERSION`, `GITHUB_RELEASE_TAG`, `GITHUB_REPOSITORY`, and `GITHUB_RELEASE_TOKEN`.
+5. `scripts/start_appveyor_build.py` starts AppVeyor with `OPENSSL_VERSION`, `GITHUB_RELEASE_TAG`, `GITHUB_REPOSITORY`, and `GITHUB_RELEASE_TOKEN`, then exits without waiting for the Windows build.
 6. AppVeyor runs four jobs: `x86 static`, `x86 shared`, `x64 static`, and `x64 shared`.
 7. Each AppVeyor job downloads the official OpenSSL archive, builds it with Visual Studio, NASM, and Perl, packages the install directory, and uploads the zip as a GitHub Release asset.
 
@@ -106,6 +106,7 @@ Add or remove matrix entries to change the output set. Keep artifact naming alig
 - Tags matching `tag_pattern` are the primary source of truth for processed versions.
 - GitHub Actions creates the release before AppVeyor starts, so failed AppVeyor builds leave an empty or partial release for investigation and retry.
 - AppVeyor uploads assets directly to GitHub Releases. Use a fine-scoped token for `GH_RELEASE_UPLOAD_TOKEN`.
+- GitHub Actions does not wait for AppVeyor by default, so release orchestration does not spend Actions minutes while Windows builds run.
 - The workflow schedule is defined in YAML because GitHub Actions does not read cron values dynamically from repository config.
 
 ## Troubleshooting
