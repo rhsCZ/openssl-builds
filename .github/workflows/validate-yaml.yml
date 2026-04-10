@@ -1,12 +1,13 @@
+name: Validate YAML
+
 on:
   push:
     paths:
       - '**.yml'
       - '**.yaml'
-release:
-  types: [created]
+  release:
+    types: [created]
 
-name: Validate YAML
 jobs:
   releases-matrix:
     name: Validate YAML
