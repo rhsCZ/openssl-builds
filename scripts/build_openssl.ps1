@@ -43,8 +43,8 @@ function Invoke-CheckedCommand {
         [Parameter(Mandatory = $true)]
         [string] $FilePath,
 
-        [Parameter(ValueFromRemainingArguments = $true)]
-        [string[]] $Arguments
+        [Parameter(Mandatory = $false)]
+        [string[]] $Arguments = @()
     )
 
     $commandLine = "$FilePath $($Arguments -join ' ')".Trim()
@@ -147,9 +147,9 @@ try {
     Write-Step "Shared option: $SharedOption"
     Write-Step "Install directory: $installPath"
     Write-Step "Checking Perl version"
-    Invoke-CheckedCommand perl -v
+    Invoke-CheckedCommand -FilePath "perl" -Arguments @("-v")
     Write-Step "Checking NASM version"
-    Invoke-CheckedCommand nasm -v
+    Invoke-CheckedCommand -FilePath "nasm" -Arguments @("-v")
 
     Write-Step "Creating install directory"
     New-Item -ItemType Directory -Force -Path $installPath | Out-Null
@@ -157,13 +157,13 @@ try {
     $configureArgs = @($Target, $SharedOption, "--prefix=$installPath", "--openssldir=$installPath\ssl", "no-makedepend")
 
     Write-Step "Configuring OpenSSL $Version for $Arch $Linkage"
-    Invoke-CheckedCommand perl @("Configure") @configureArgs
+    Invoke-CheckedCommand -FilePath "perl" -Arguments (@("Configure") + $configureArgs)
 
     Write-Step "Building OpenSSL. This can take several minutes."
-    Invoke-CheckedCommand nmake
+    Invoke-CheckedCommand -FilePath "nmake"
 
     Write-Step "Installing OpenSSL into $installPath"
-    Invoke-CheckedCommand nmake install
+    Invoke-CheckedCommand -FilePath "nmake" -Arguments @("install")
 }
 finally {
     Pop-Location
