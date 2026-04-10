@@ -4,33 +4,40 @@ image: Visual Studio 2022
 
 environment:
   matrix:
-    - BUILD_ARCH: x86
-      BUILD_LINKAGE: static
-      OPENSSL_TARGET: VC-WIN32
-      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
-    - BUILD_ARCH: x86
-      BUILD_LINKAGE: shared
-      OPENSSL_TARGET: VC-WIN32
-      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
-    - BUILD_ARCH: x64
-      BUILD_LINKAGE: static
-      OPENSSL_TARGET: VC-WIN64A
-      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
-    - BUILD_ARCH: x64
-      BUILD_LINKAGE: shared
-      OPENSSL_TARGET: VC-WIN64A
-      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
+    - NAME: Win32-static
+      ARCH: x86
+      CONFIG: VC-WIN32
+      SHARED: no-shared
+      LINKAGE: static
+
+    - NAME: Win32-shared
+      ARCH: x86
+      CONFIG: VC-WIN32
+      SHARED: shared
+      LINKAGE: shared
+
+    - NAME: Win64-static
+      ARCH: x64
+      CONFIG: VC-WIN64A
+      SHARED: no-shared
+      LINKAGE: static
+
+    - NAME: Win64-shared
+      ARCH: x64
+      CONFIG: VC-WIN64A
+      SHARED: shared
+      LINKAGE: shared
 
 install:
-  - ps: choco install nasm strawberryperl -y --no-progress
+  - ps: choco install nasm -y --no-progress
   - ps: refreshenv
-  - ps: perl --version
-  - ps: nasm -v
+  - ps: $env:PATH = "C:\Strawberry\perl\bin;C:\Program Files\NASM;$env:PATH"; perl -v
+  - ps: $env:PATH = "C:\Program Files\NASM;$env:PATH"; nasm -v
 
 build_script:
   - ps: .\scripts\download_openssl.ps1 -Version $env:OPENSSL_VERSION
-  - ps: .\scripts\build_openssl.ps1 -Version $env:OPENSSL_VERSION -Arch $env:BUILD_ARCH -Linkage $env:BUILD_LINKAGE -Target $env:OPENSSL_TARGET
-  - ps: .\scripts\package_artifacts.ps1 -Version $env:OPENSSL_VERSION -Arch $env:BUILD_ARCH -Linkage $env:BUILD_LINKAGE
+  - ps: .\scripts\build_openssl.ps1 -Version $env:OPENSSL_VERSION -Name $env:NAME -Arch $env:ARCH -Linkage $env:LINKAGE -Target $env:CONFIG -SharedOption $env:SHARED
+  - ps: .\scripts\package_artifacts.ps1 -Version $env:OPENSSL_VERSION -Arch $env:ARCH -Linkage $env:LINKAGE
 
 artifacts:
   - path: artifacts\*.zip

@@ -91,9 +91,11 @@ Each variant is defined by:
 
 | Variable | Meaning |
 | --- | --- |
-| `BUILD_ARCH` | `x86` or `x64`. |
-| `BUILD_LINKAGE` | `static` or `shared`. |
-| `OPENSSL_TARGET` | OpenSSL Configure target, currently `VC-WIN32` or `VC-WIN64A`. |
+| `NAME` | AppVeyor variant name, for example `Win32-static`. |
+| `ARCH` | `x86` or `x64`. |
+| `CONFIG` | OpenSSL Configure target, currently `VC-WIN32` or `VC-WIN64A`. |
+| `SHARED` | OpenSSL linkage option, `no-shared` or `shared`. |
+| `LINKAGE` | Artifact naming value, `static` or `shared`. |
 
 Add or remove matrix entries to change the output set. Keep artifact naming aligned with `scripts/package_artifacts.ps1`.
 
@@ -118,7 +120,7 @@ The build installs Strawberry Perl. If `perl Configure` fails before OpenSSL con
 
 ### AppVeyor artifact not found
 
-Check `scripts/package_artifacts.ps1`. The script expects `dist/openssl-<version>-<win32|win64>-<static|shared>` to exist after `nmake install_sw`. If the build completed but packaging failed, inspect the install prefix printed by `scripts/build_openssl.ps1`.
+Check `scripts/package_artifacts.ps1`. The script expects `dist/openssl-<version>-<win32|win64>-<static|shared>` to exist after `nmake install`. If the build completed but packaging failed, inspect the install prefix printed by `scripts/build_openssl.ps1`.
 
 ### Release asset upload failed
 
