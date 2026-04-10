@@ -1,0 +1,40 @@
+version: 1.0.{build}
+
+image: Visual Studio 2022
+
+environment:
+  matrix:
+    - BUILD_ARCH: x86
+      BUILD_LINKAGE: static
+      OPENSSL_TARGET: VC-WIN32
+      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
+    - BUILD_ARCH: x86
+      BUILD_LINKAGE: shared
+      OPENSSL_TARGET: VC-WIN32
+      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
+    - BUILD_ARCH: x64
+      BUILD_LINKAGE: static
+      OPENSSL_TARGET: VC-WIN64A
+      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
+    - BUILD_ARCH: x64
+      BUILD_LINKAGE: shared
+      OPENSSL_TARGET: VC-WIN64A
+      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
+
+install:
+  - ps: choco install nasm strawberryperl -y --no-progress
+  - ps: refreshenv
+  - ps: perl --version
+  - ps: nasm -v
+
+build_script:
+  - ps: .\scripts\download_openssl.ps1 -Version $env:OPENSSL_VERSION
+  - ps: .\scripts\build_openssl.ps1 -Version $env:OPENSSL_VERSION -Arch $env:BUILD_ARCH -Linkage $env:BUILD_LINKAGE -Target $env:OPENSSL_TARGET
+  - ps: .\scripts\package_artifacts.ps1 -Version $env:OPENSSL_VERSION -Arch $env:BUILD_ARCH -Linkage $env:BUILD_LINKAGE
+
+artifacts:
+  - path: artifacts\*.zip
+    name: openssl-windows-builds
+
+on_finish:
+  - ps: .\scripts\upload_release_assets.ps1 -Version $env:OPENSSL_VERSION -Tag $env:GITHUB_RELEASE_TAG -Repository $env:GITHUB_REPOSITORY

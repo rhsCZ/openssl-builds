@@ -1,0 +1,11 @@
+{
+  "allow_prereleases": false,
+  "check_cron": "17 6 * * *",
+  "openssl_source_url": "https://www.openssl.org/source/",
+  "tag_pattern": "openssl-{version}",
+  "release_name_pattern": "OpenSSL {version} Windows builds",
+  "release_body_template": "Automated Windows builds for OpenSSL {version}.",
+  "appveyor_branch": "master",
+  "appveyor_poll_seconds": 30,
+  "appveyor_timeout_minutes": 120
+}

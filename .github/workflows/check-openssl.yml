@@ -1,0 +1,78 @@
+name: Check OpenSSL Release
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional OpenSSL version to process, for example 3.6.0"
+        required: false
+        type: string
+      allow_prereleases:
+        description: "Allow alpha, beta, and rc versions for this run"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: openssl-release-orchestration
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check and orchestrate release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Plan release
+        id: plan
+        run: |
+          python scripts/plan_release.py \
+            --config config/release.json \
+            --version "${{ inputs.version }}" \
+            --allow-prereleases-input "${{ inputs.allow_prereleases }}"
+
+      - name: Create tag and GitHub Release
+        id: release
+        if: steps.plan.outputs.should_build == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          python scripts/create_github_release.py \
+            --config config/release.json \
+            --version "${{ steps.plan.outputs.version }}"
+
+      - name: Start AppVeyor build
+        if: steps.plan.outputs.should_build == 'true'
+        env:
+          APPVEYOR_API_TOKEN: ${{ secrets.APPVEYOR_API_TOKEN }}
+          APPVEYOR_ACCOUNT_NAME: ${{ secrets.APPVEYOR_ACCOUNT_NAME }}
+          APPVEYOR_PROJECT_SLUG: ${{ secrets.APPVEYOR_PROJECT_SLUG }}
+          GITHUB_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_UPLOAD_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python scripts/start_appveyor_build.py \
+            --version "${{ steps.plan.outputs.version }}" \
+            --tag "${{ steps.plan.outputs.tag }}" \
+            --config config/release.json
+
+      - name: No new release
+        if: steps.plan.outputs.should_build != 'true'
+        run: |
+          echo "No new OpenSSL release to process."
