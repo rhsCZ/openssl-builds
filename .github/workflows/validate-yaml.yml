@@ -16,7 +16,6 @@ jobs:
       - uses: actions/checkout@v2
       - uses: RomanosTrechlis/actions-validate-yaml@master
         with:
-          schema: spec.json
+          schema: spec.yaml
           data: |-
-            file1.yml
-            file2.yml
+            check-openssl.yml
