@@ -9,6 +9,7 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -17,10 +18,16 @@ def load_config(path: str) -> dict:
         return json.load(handle)
 
 
-def appveyor_request(method: str, path: str, token: str, payload: dict | None = None) -> dict:
+def appveyor_api_prefix(token: str, account: str) -> str:
+    if token.startswith("v2."):
+        return f"/account/{urllib.parse.quote(account)}"
+    return ""
+
+
+def appveyor_request(method: str, path: str, token: str, api_prefix: str, payload: dict | None = None) -> dict:
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = urllib.request.Request(
-        f"https://ci.appveyor.com/api{path}",
+        f"https://ci.appveyor.com/api{api_prefix}{path}",
         data=data,
         method=method,
         headers={
@@ -46,6 +53,14 @@ def require_env(name: str) -> str:
     return value
 
 
+def project_summary(project: dict) -> str:
+    repository = project.get("repositoryName") or "unknown-repository"
+    branch = project.get("repositoryBranch") or "unknown-branch"
+    slug = project.get("slug") or "unknown-slug"
+    account = project.get("accountName") or "unknown-account"
+    return f"{account}/{slug} repo={repository} branch={branch}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
@@ -59,6 +74,24 @@ def main() -> int:
     project = require_env("APPVEYOR_PROJECT_SLUG")
     repository = require_env("GITHUB_REPOSITORY")
     release_token = require_env("GITHUB_RELEASE_TOKEN")
+    api_prefix = appveyor_api_prefix(token, account)
+
+    print(f"AppVeyor account: {account}")
+    print(f"AppVeyor project slug: {project}")
+    print(f"AppVeyor API mode: {'v2 user-level token' if api_prefix else 'classic account token'}")
+    print(f"AppVeyor branch: {config.get('appveyor_branch', 'master')}")
+
+    projects_response = appveyor_request("GET", "/projects", token, api_prefix)
+    projects = projects_response if isinstance(projects_response, list) else []
+    matching_projects = [item for item in projects if item.get("slug") == project]
+    if not matching_projects:
+        visible = ", ".join(sorted(item.get("slug", "") for item in projects if item.get("slug"))) or "none"
+        raise RuntimeError(
+            f"AppVeyor project slug '{project}' was not found for account '{account}'. "
+            f"Projects visible to this token: {visible}"
+        )
+
+    print(f"Found AppVeyor project: {project_summary(matching_projects[0])}")
 
     payload = {
         "accountName": account,
@@ -72,7 +105,7 @@ def main() -> int:
         },
     }
 
-    build = appveyor_request("POST", "/builds", token, payload)
+    build = appveyor_request("POST", "/builds", token, api_prefix, payload)
     build_id = build.get("buildId") or build.get("version")
     version = build.get("version")
     print(f"Started AppVeyor build version={version} buildId={build_id} for OpenSSL {args.version}.")
@@ -82,7 +115,7 @@ def main() -> int:
     deadline = time.time() + timeout_seconds
 
     while time.time() < deadline:
-        project_status = appveyor_request("GET", f"/projects/{account}/{project}", token)
+        project_status = appveyor_request("GET", f"/projects/{account}/{project}", token, api_prefix)
         current_build = project_status.get("build", {})
         if version and current_build.get("version") != version:
             time.sleep(poll_seconds)
