@@ -1,0 +1,21 @@
+on:
+  push:
+    paths:
+      - '**.yml'
+      - '**.yaml'
+release:
+  types: [created]
+
+name: Validate YAML
+jobs:
+  releases-matrix:
+    name: Validate YAML
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: RomanosTrechlis/actions-validate-yaml@master
+        with:
+          schema: spec.json
+          data: |-
+            file1.yml
+            file2.yml

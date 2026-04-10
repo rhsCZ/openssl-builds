@@ -1,3 +1,4 @@
+#test
 name: Check OpenSSL Release
 
 on:
