@@ -3,19 +3,70 @@ name: Validate YAML
 on:
   push:
     paths:
-      - '**.yml'
-      - '**.yaml'
-  release:
-    types: [created]
+      - "**.yml"
+      - "**.yaml"
+  pull_request:
+    paths:
+      - "**.yml"
+      - "**.yaml"
+  workflow_dispatch:
 
 jobs:
-  releases-matrix:
-    name: Validate YAML
+  validate:
+    name: Validate YAML syntax
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v2
-      - uses: RomanosTrechlis/actions-validate-yaml@master
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          schema: spec.yaml
-          data: |-
-            check-openssl.yml
+          python-version: "3.x"
+
+      - name: Install validator
+        run: |
+          python -m pip install --disable-pip-version-check PyYAML
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+
+      - name: Validate YAML files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t files < <(find . -type f \( -name "*.yml" -o -name "*.yaml" \) \
+            -not -path "./.git/*" \
+            -not -path "./source/*" \
+            -not -path "./dist/*" \
+            -not -path "./artifacts/*" \
+            | sort)
+
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No YAML files found."
+            exit 0
+          fi
+
+          printf "Validating %s YAML file(s):\n" "${#files[@]}"
+          printf " - %s\n" "${files[@]}"
+
+          python - "${files[@]}" <<'PY'
+          import sys
+          import yaml
+
+          failed = False
+          for path in sys.argv[1:]:
+              try:
+                  with open(path, "r", encoding="utf-8") as handle:
+                      yaml.safe_load(handle)
+                  print(f"OK {path}")
+              except Exception as exc:
+                  failed = True
+                  print(f"ERROR {path}: {exc}", file=sys.stderr)
+
+          if failed:
+              raise SystemExit(1)
+          PY
+
+      - name: Validate GitHub Actions workflows
+        run: ./actionlint -color
