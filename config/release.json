@@ -1,6 +1,5 @@
 {
   "allow_prereleases": false,
-  "check_cron": "17 6 * * *",
   "openssl_source_url": "https://www.openssl.org/source/",
   "tag_pattern": "openssl-{version}",
   "release_name_pattern": "OpenSSL {version} Windows builds",

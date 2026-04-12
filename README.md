@@ -87,12 +87,13 @@ Edit `config/release.json` to change release behavior:
 | Key | Meaning |
 | --- | --- |
 | `allow_prereleases` | Enables alpha, beta, rc, pre, and dev versions by default. |
-| `check_cron` | Documentation value for the schedule. The actual cron must also be changed in `.github/workflows/check-openssl.yml`. |
 | `openssl_source_url` | Source page used to discover official OpenSSL tarballs. |
 | `tag_pattern` | Tag format. Must contain `{version}`. |
 | `release_name_pattern` | GitHub Release title format. Must contain `{version}`. |
 | `release_body_template` | GitHub Release body template. Must contain `{version}`. |
 | `appveyor_branch` | Branch AppVeyor should build when triggered from GitHub Actions. |
+
+To change the scheduled check interval, edit the `schedule` cron expression directly in `.github/workflows/check-openssl.yml`.
 
 ## Build Matrix
 
