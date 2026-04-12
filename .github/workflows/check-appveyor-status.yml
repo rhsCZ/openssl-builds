@@ -1,0 +1,33 @@
+name: Check AppVeyor Status
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Check AppVeyor project status
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Check AppVeyor status
+        id: appveyor
+        env:
+          APPVEYOR_API_TOKEN: ${{ secrets.APPVEYOR_API_TOKEN }}
+          APPVEYOR_ACCOUNT_NAME: ${{ secrets.APPVEYOR_ACCOUNT_NAME }}
+          APPVEYOR_PROJECT_SLUG: ${{ secrets.APPVEYOR_PROJECT_SLUG }}
+        run: |
+          python scripts/check_appveyor_status.py
+
+      - name: Summary
+        run: |
+          echo "AppVeyor status: ${{ steps.appveyor.outputs.status }}"
+          echo "AppVeyor build version: ${{ steps.appveyor.outputs.version }}"
+          echo "AppVeyor is busy: ${{ steps.appveyor.outputs.is_busy }}"
