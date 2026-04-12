@@ -13,12 +13,14 @@ This repository contains CI/CD glue for automated Windows builds of upstream Ope
 
 ```text
 .github/workflows/check-openssl.yml  GitHub Actions release orchestrator
+.github/workflows/check-appveyor-status.yml  Manual AppVeyor status check
 appveyor.yml                         AppVeyor Windows build matrix
 config/release.json                  Human-readable release configuration
 scripts/find_latest_openssl.py       Finds the latest upstream OpenSSL version
 scripts/plan_release.py              Compares upstream version with processed tags
 scripts/create_github_release.py     Creates or reuses the git tag and GitHub Release
-scripts/start_appveyor_build.py      Starts AppVeyor and waits for completion
+scripts/check_appveyor_status.py     Checks whether AppVeyor is idle or already building
+scripts/start_appveyor_build.py      Starts AppVeyor without waiting for completion
 scripts/download_openssl.ps1         Downloads and extracts official OpenSSL source
 scripts/build_openssl.ps1            Builds and installs OpenSSL with MSVC
 scripts/package_artifacts.ps1        Packs usable install output into zip artifacts
@@ -30,10 +32,12 @@ scripts/upload_release_assets.ps1    Uploads AppVeyor artifacts to the GitHub Re
 1. GitHub Actions runs on schedule or through `workflow_dispatch`.
 2. `scripts/plan_release.py` reads `config/release.json`, detects the latest stable OpenSSL version from `https://www.openssl.org/source/`, and compares it with existing tags matching `openssl-{version}`.
 3. If there is no new version, the workflow logs the detected state and exits successfully.
-4. If there is a new version, `scripts/create_github_release.py` creates or reuses the tag and GitHub Release.
-5. `scripts/start_appveyor_build.py` starts AppVeyor with `OPENSSL_VERSION`, `GITHUB_RELEASE_TAG`, `GITHUB_REPOSITORY`, and `GITHUB_RELEASE_TOKEN`, then exits without waiting for the Windows build.
-6. AppVeyor runs four jobs: `x86 static`, `x86 shared`, `x64 static`, and `x64 shared`.
-7. Each AppVeyor job downloads the official OpenSSL archive, builds it with Visual Studio, NASM, and Perl, packages the install directory, and uploads the zip as a GitHub Release asset.
+4. If there is a new version, `scripts/check_appveyor_status.py` checks whether AppVeyor is already queued, starting, or running.
+5. If AppVeyor is busy, the workflow logs the current AppVeyor state and exits successfully without creating a tag, release, or new build.
+6. If AppVeyor is idle, `scripts/create_github_release.py` creates or reuses the tag and GitHub Release.
+7. `scripts/start_appveyor_build.py` starts AppVeyor with `OPENSSL_VERSION`, `GITHUB_RELEASE_TAG`, `GITHUB_REPOSITORY`, and `GITHUB_RELEASE_TOKEN`, then exits without waiting for the Windows build.
+8. AppVeyor runs four jobs: `x86 static`, `x86 shared`, `x64 static`, and `x64 shared`.
+9. Each AppVeyor job downloads the official OpenSSL archive, builds it with Visual Studio, NASM, and Perl, packages the install directory, and uploads the zip as a GitHub Release asset.
 
 ## Required Secrets
 
@@ -41,7 +45,7 @@ Configure these secrets in GitHub Actions:
 
 | Secret | Purpose |
 | --- | --- |
-| `APPVEYOR_API_TOKEN` | AppVeyor API token used by GitHub Actions to start and poll builds. |
+| `APPVEYOR_API_TOKEN` | AppVeyor API token used by GitHub Actions to check project status and start builds. |
 | `APPVEYOR_ACCOUNT_NAME` | AppVeyor account name that owns the project. |
 | `APPVEYOR_PROJECT_SLUG` | AppVeyor project slug for this repository. |
 | `GH_RELEASE_UPLOAD_TOKEN` | GitHub token passed to AppVeyor for release asset uploads. It needs `contents:write` access to this repository. |
@@ -61,6 +65,8 @@ Optional inputs:
 
 Forced runs are useful for retrying a release after fixing AppVeyor configuration.
 
+The `Check AppVeyor Status` workflow is also available for manual diagnostics. It only reads AppVeyor state and prints whether the project is idle or busy.
+
 ## Artifacts
 
 Release assets are named consistently:
@@ -72,7 +78,7 @@ openssl-<version>-win64-static.zip
 openssl-<version>-win64-shared.zip
 ```
 
-Each zip contains the installed OpenSSL output from `nmake install_sw`: headers, libraries, binaries, and runtime files where applicable.
+Each zip contains the installed OpenSSL output from `nmake install`: headers, libraries, binaries, documentation, and runtime files where applicable.
 
 ## Configuration
 
@@ -87,8 +93,6 @@ Edit `config/release.json` to change release behavior:
 | `release_name_pattern` | GitHub Release title format. Must contain `{version}`. |
 | `release_body_template` | GitHub Release body template. Must contain `{version}`. |
 | `appveyor_branch` | Branch AppVeyor should build when triggered from GitHub Actions. |
-| `appveyor_poll_seconds` | Poll interval while GitHub Actions waits for AppVeyor. |
-| `appveyor_timeout_minutes` | Maximum AppVeyor wait time before failing the workflow. |
 
 ## Build Matrix
 
@@ -111,7 +115,8 @@ Add or remove matrix entries to change the output set. Keep artifact naming alig
 - This repository intentionally does not store OpenSSL source archives or extracted source trees.
 - The source discovery script reads OpenSSL tarball names from the official source directory.
 - Tags matching `tag_pattern` are the primary source of truth for processed versions.
-- GitHub Actions creates the release before AppVeyor starts, so failed AppVeyor builds leave an empty or partial release for investigation and retry.
+- GitHub Actions checks AppVeyor before creating a release, so a running AppVeyor build does not produce another release or build request.
+- GitHub Actions creates the release before starting AppVeyor. If AppVeyor later fails, the release may remain empty or partial for investigation and retry.
 - AppVeyor uploads assets directly to GitHub Releases. Use a fine-scoped token for `GH_RELEASE_UPLOAD_TOKEN`.
 - GitHub Actions does not wait for AppVeyor by default, so release orchestration does not spend Actions minutes while Windows builds run.
 - The workflow schedule is defined in YAML because GitHub Actions does not read cron values dynamically from repository config.
@@ -120,11 +125,11 @@ Add or remove matrix entries to change the output set. Keep artifact naming alig
 
 ### NASM is not on PATH
 
-AppVeyor installs NASM with Chocolatey and runs `refreshenv`. If `nasm -v` still fails, check the AppVeyor image, Chocolatey logs, and PATH in the install phase.
+AppVeyor installs NASM with Chocolatey and explicitly prepends `C:\Program Files\NASM` to `PATH`. If `nasm -v` fails, check the AppVeyor image, Chocolatey logs, and PATH in the install phase.
 
 ### Perl problem
 
-The build installs Strawberry Perl. If `perl Configure` fails before OpenSSL configuration starts, verify that `perl --version` works and that AppVeyor did not pick up another incompatible Perl first on PATH.
+The build uses Strawberry Perl already available on the Visual Studio 2022 AppVeyor image and explicitly prepends `C:\Strawberry\perl\bin` to `PATH`. If `perl Configure` fails before OpenSSL configuration starts, verify that `perl --version` works and that AppVeyor did not pick up another incompatible Perl first on PATH.
 
 ### AppVeyor artifact not found
 
