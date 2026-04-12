@@ -1,6 +1,13 @@
 # OpenSSL Windows Builds
 
+[![Build status](https://ci.appveyor.com/api/projects/status/5seyaa8rts8u0wdr?svg=true)](https://ci.appveyor.com/project/rhsCZ/openssl-builds)
+
 This repository contains CI/CD glue for automated Windows builds of upstream OpenSSL. It does not vendor OpenSSL sources. Every AppVeyor job downloads the official OpenSSL source archive for the requested version, builds it, packages the install output, and uploads the zip file to the matching GitHub Release.
+
+## Build Status
+
+- AppVeyor project: https://ci.appveyor.com/project/rhsCZ/openssl-builds
+- AppVeyor build history: https://ci.appveyor.com/project/rhsCZ/openssl-builds/history
 
 ## Repository Layout
 
