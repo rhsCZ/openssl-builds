@@ -47,9 +47,25 @@ jobs:
             --version "${{ inputs.version }}" \
             --allow-prereleases-input "${{ inputs.allow_prereleases }}"
 
+      - name: Check AppVeyor status
+        id: appveyor
+        if: steps.plan.outputs.should_build == 'true'
+        env:
+          APPVEYOR_API_TOKEN: ${{ secrets.APPVEYOR_API_TOKEN }}
+          APPVEYOR_ACCOUNT_NAME: ${{ secrets.APPVEYOR_ACCOUNT_NAME }}
+          APPVEYOR_PROJECT_SLUG: ${{ secrets.APPVEYOR_PROJECT_SLUG }}
+        run: |
+          python scripts/check_appveyor_status.py
+
+      - name: AppVeyor is already busy
+        if: steps.plan.outputs.should_build == 'true' && steps.appveyor.outputs.is_busy == 'true'
+        run: |
+          echo "AppVeyor is already busy with build ${{ steps.appveyor.outputs.version }} (status: ${{ steps.appveyor.outputs.status }})."
+          echo "Skipping release orchestration for this run."
+
       - name: Create tag and GitHub Release
         id: release
-        if: steps.plan.outputs.should_build == 'true'
+        if: steps.plan.outputs.should_build == 'true' && steps.appveyor.outputs.is_busy != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -60,7 +76,7 @@ jobs:
             --version "${{ steps.plan.outputs.version }}"
 
       - name: Start AppVeyor build
-        if: steps.plan.outputs.should_build == 'true'
+        if: steps.plan.outputs.should_build == 'true' && steps.appveyor.outputs.is_busy != 'true'
         env:
           APPVEYOR_API_TOKEN: ${{ secrets.APPVEYOR_API_TOKEN }}
           APPVEYOR_ACCOUNT_NAME: ${{ secrets.APPVEYOR_ACCOUNT_NAME }}
