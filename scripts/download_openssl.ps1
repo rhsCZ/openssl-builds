@@ -14,7 +14,10 @@ $sourceDir = Join-Path $PWD "source"
 $archiveName = "openssl-$Version.tar.gz"
 $archivePath = Join-Path $PWD $archiveName
 $extractPath = Join-Path $sourceDir "openssl-$Version"
-$downloadUrl = "https://www.openssl.org/source/$archiveName"
+$downloadUrls = @(
+    "https://www.openssl.org/source/$archiveName",
+    "https://github.com/openssl/openssl/releases/download/openssl-$Version/$archiveName"
+)
 
 Write-Step "Preparing OpenSSL source download for version $Version"
 Write-Step "Source directory: $sourceDir"
@@ -29,9 +32,33 @@ if (Test-Path $extractPath) {
 Write-Step "Creating source directory"
 New-Item -ItemType Directory -Force -Path $sourceDir | Out-Null
 
-Write-Step "Downloading $downloadUrl"
-Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
-Write-Step "Download finished"
+if (Test-Path $archivePath) {
+    Write-Step "Removing existing archive $archivePath"
+    Remove-Item $archivePath -Force
+}
+
+$downloadSucceeded = $false
+foreach ($downloadUrl in $downloadUrls) {
+    try {
+        Write-Step "Downloading $downloadUrl"
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
+        Write-Step "Download finished from $downloadUrl"
+        $downloadSucceeded = $true
+        break
+    }
+    catch {
+        Write-Step "Download failed from $downloadUrl"
+        Write-Step $_.Exception.Message
+        if (Test-Path $archivePath) {
+            Write-Step "Removing partial archive $archivePath"
+            Remove-Item $archivePath -Force
+        }
+    }
+}
+
+if (-not $downloadSucceeded) {
+    throw "Failed to download $archiveName from all configured URLs"
+}
 
 Write-Step "Extracting $archiveName"
 tar -xzf $archivePath -C $sourceDir
