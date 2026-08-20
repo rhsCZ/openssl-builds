@@ -14,13 +14,16 @@ This repository contains CI/CD glue for automated Windows builds of upstream Ope
 ```text
 .github/workflows/check-openssl.yml  GitHub Actions release orchestrator
 .github/workflows/check-appveyor-status.yml  Manual AppVeyor status check
+.github/workflows/keepalive.yml      Monthly keepalive commit for scheduled workflows
 appveyor.yml                         AppVeyor Windows build matrix
 config/release.json                  Human-readable release configuration
+state/keepalive.json                 Timestamp for monthly keepalive commit
 scripts/find_latest_openssl.py       Finds the latest upstream OpenSSL version
 scripts/plan_release.py              Compares upstream version with processed tags
 scripts/create_github_release.py     Creates or reuses the git tag and GitHub Release
 scripts/check_appveyor_status.py     Checks whether AppVeyor is idle or already building
 scripts/start_appveyor_build.py      Starts AppVeyor without waiting for completion
+scripts/update_keepalive.py          Updates keepalive state for scheduled workflow activity
 scripts/download_openssl.ps1         Downloads and extracts official OpenSSL source
 scripts/build_openssl.ps1            Builds and installs OpenSSL with MSVC
 scripts/package_artifacts.ps1        Packs usable install output into zip artifacts
@@ -67,6 +70,8 @@ Forced runs are useful for retrying a release after fixing AppVeyor configuratio
 
 The `Check AppVeyor Status` workflow is also available for manual diagnostics. It only reads AppVeyor state and prints whether the project is idle or busy.
 
+The `Keepalive` workflow runs monthly and creates a small dummy commit in `state/keepalive.json` so GitHub does not disable scheduled workflows due to repository inactivity.
+
 ## Artifacts
 
 Release assets are named consistently:
@@ -94,6 +99,7 @@ Edit `config/release.json` to change release behavior:
 | `appveyor_branch` | Branch AppVeyor should build when triggered from GitHub Actions. |
 
 To change the scheduled check interval, edit the `schedule` cron expression directly in `.github/workflows/check-openssl.yml`.
+To change the keepalive interval, edit the `schedule` cron expression directly in `.github/workflows/keepalive.yml`.
 
 ## Build Matrix
 
@@ -121,6 +127,7 @@ Add or remove matrix entries to change the output set. Keep artifact naming alig
 - AppVeyor uploads assets directly to GitHub Releases. Use a fine-scoped token for `GH_RELEASE_UPLOAD_TOKEN`.
 - GitHub Actions does not wait for AppVeyor by default, so release orchestration does not spend Actions minutes while Windows builds run.
 - The workflow schedule is defined in YAML because GitHub Actions does not read cron values dynamically from repository config.
+- A separate monthly keepalive commit is used to reduce the chance that GitHub disables scheduled workflows after long repository inactivity.
 
 ## Troubleshooting
 
