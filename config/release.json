@@ -1,6 +1,6 @@
 {
   "allow_prereleases": false,
-  "openssl_source_url": "https://www.openssl.org/source/",
+  "openssl_source_url": "https://openssl-library.org/source/",
   "tag_pattern": "openssl-{version}",
   "release_name_pattern": "OpenSSL {version} Windows builds",
   "release_body_template": "Automated Windows builds for OpenSSL {version}.",

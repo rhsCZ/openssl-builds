@@ -12,6 +12,8 @@ import sys
 import urllib.error
 import urllib.request
 
+from find_latest_openssl import find_release_by_version
+
 
 def log(message: str) -> None:
     timestamp = dt.datetime.now(dt.UTC).strftime("%H:%M:%S")
@@ -84,7 +86,10 @@ def ensure_release(repo: str, token: str, tag: str, version: str, config: dict) 
         log(f"GitHub Release for {tag} already exists; reusing it")
         return
 
-    release_name = config["release_name_pattern"].format(version=version)
+    allow_prereleases = bool(config.get("allow_prereleases", False))
+    release_metadata = find_release_by_version(config["openssl_source_url"], version, allow_prereleases)
+    lts_suffix = " (LTS)" if release_metadata and release_metadata.is_lts else ""
+    release_name = config["release_name_pattern"].format(version=version) + lts_suffix
     release_body = config["release_body_template"].format(version=version)
     payload = {
         "tag_name": tag,
@@ -93,6 +98,14 @@ def ensure_release(repo: str, token: str, tag: str, version: str, config: dict) 
         "draft": False,
         "prerelease": any(marker in version.lower() for marker in ("alpha", "beta", "rc", "pre", "dev")),
     }
+    if release_metadata:
+        log(
+            f"Resolved upstream release metadata for {version}: "
+            f"series={release_metadata.series}, lts={str(release_metadata.is_lts).lower()}, "
+            f"eol={release_metadata.end_of_life.isoformat()}"
+        )
+    else:
+        log(f"Upstream release metadata for {version} was not found; creating release without LTS suffix")
     log(f"Creating GitHub Release {release_name}")
     request_json("POST", f"{api_base}/releases", token, payload)
     log(f"Created GitHub Release {release_name} for tag {tag}")

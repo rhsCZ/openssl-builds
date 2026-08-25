@@ -11,7 +11,7 @@ import re
 import subprocess
 import sys
 
-from find_latest_openssl import find_latest, is_prerelease, version_key
+from find_latest_openssl import SupportedRelease, find_supported_releases, is_prerelease, version_key
 
 
 def log(message: str) -> None:
@@ -59,6 +59,25 @@ def latest_processed_version(tags: list[str], tag_pattern: str, allow_prerelease
     return sorted(versions, key=version_key)[-1]
 
 
+def processed_versions(tags: list[str], tag_pattern: str, allow_prereleases: bool) -> list[str]:
+    regex = pattern_to_regex(tag_pattern)
+    versions = []
+    for tag in tags:
+        match = regex.match(tag)
+        if not match:
+            continue
+        version = match.group("version")
+        if allow_prereleases or not is_prerelease(version):
+            versions.append(version)
+    return sorted(set(versions), key=version_key)
+
+
+def non_eol_supported_versions(releases: list[SupportedRelease]) -> list[str]:
+    today = dt.datetime.now(dt.timezone.utc).date()
+    versions = [release.version for release in releases if release.end_of_life >= today]
+    return versions
+
+
 def write_output(name: str, value: str) -> None:
     output_path = os.environ.get("GITHUB_OUTPUT")
     if output_path:
@@ -82,29 +101,51 @@ def main() -> int:
     if forced_version:
         log(f"Using manually requested OpenSSL version {forced_version}")
     else:
-        log("No manual version provided; detecting latest upstream version")
-    upstream_version = forced_version or find_latest(config["openssl_source_url"], allow_prereleases)
-    if is_prerelease(upstream_version) and not allow_prereleases:
-        raise RuntimeError(f"Version {upstream_version} is a prerelease and prereleases are disabled")
-
-    tag = config["tag_pattern"].format(version=upstream_version)
-    log(f"Computed target tag {tag}")
+        log("No manual version provided; detecting supported upstream versions")
     tags = git_tags()
-    processed = latest_processed_version(tags, config["tag_pattern"], allow_prereleases)
+    processed = processed_versions(tags, config["tag_pattern"], allow_prereleases)
+    latest_processed = processed[-1] if processed else ""
+
+    if forced_version:
+        selected_version = forced_version
+        supported_versions = []
+        buildable_versions = []
+        pending_versions = []
+        selected_is_lts = False
+    else:
+        supported_releases = find_supported_releases(config["openssl_source_url"], allow_prereleases)
+        supported_versions = [release.version for release in supported_releases]
+        buildable_versions = non_eol_supported_versions(supported_releases)
+        if not buildable_versions:
+            raise RuntimeError("No supported non-EOL OpenSSL releases are currently available")
+        pending_versions = [version for version in buildable_versions if version not in processed]
+        selected_version = pending_versions[0] if pending_versions else buildable_versions[-1]
+        selected_is_lts = next(
+            (release.is_lts for release in supported_releases if release.version == selected_version),
+            False,
+        )
+
+    if is_prerelease(selected_version) and not allow_prereleases:
+        raise RuntimeError(f"Version {selected_version} is a prerelease and prereleases are disabled")
+
+    tag = config["tag_pattern"].format(version=selected_version)
+    log(f"Computed target tag {tag}")
     tag_exists = tag in tags
 
-    should_build = bool(forced_version) or not processed or version_key(upstream_version) > version_key(processed)
-    if tag_exists and not forced_version:
-        should_build = False
+    should_build = bool(forced_version) or (selected_version in pending_versions and not tag_exists)
 
-    log(f"Upstream OpenSSL version: {upstream_version}")
-    log(f"Last processed version: {processed or 'none'}")
-    log(f"Target tag: {tag}")
+    log(f"Supported upstream versions: {', '.join(supported_versions) if supported_versions else 'manual override'}")
+    log(f"Buildable non-EOL versions: {', '.join(buildable_versions) if buildable_versions else 'manual override'}")
+    log(f"Pending supported versions: {', '.join(pending_versions) if pending_versions else 'none'}")
+    log(f"Selected version for this run: {selected_version}")
+    log(f"Selected version is LTS: {str(selected_is_lts).lower()}")
+    log(f"Last processed version: {latest_processed or 'none'}")
     log(f"Target tag already exists: {str(tag_exists).lower()}")
     log(f"Build required: {str(should_build).lower()}")
 
-    write_output("version", upstream_version)
-    write_output("last_processed_version", processed)
+    write_output("version", selected_version)
+    write_output("is_lts", str(selected_is_lts).lower())
+    write_output("last_processed_version", latest_processed)
     write_output("tag", tag)
     write_output("should_build", str(should_build).lower())
     return 0
